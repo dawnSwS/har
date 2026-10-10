@@ -1,0 +1,57 @@
+name: Windows Build and Installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v7.0.1
+
+      - name: Install Latest Rust Nightly
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: clippy, rustfmt
+
+      - name: Check Formatting
+        run: cargo +nightly fmt --all -- --check
+
+      - name: Check Clippy Without Warnings
+        run: cargo +nightly clippy --all-targets --all-features -- -D warnings
+
+      - name: Build Release Binary
+        run: cargo +nightly build --release --all-features
+
+      - name: Build Windows Installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw "Inno Setup compiler not found: $iscc"
+          }
+          & $iscc installer.iss
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Test-Path -LiteralPath 'Output\har_installer.exe')) {
+            throw 'Inno Setup did not produce Output\har_installer.exe'
+          }
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: har-installer-windows
+          path: Output/har_installer.exe
+          if-no-files-found: error
+
